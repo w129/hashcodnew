@@ -1,0 +1,139 @@
+name: Build Openicons by Hashcod FULL offline Windows
+on:
+  push:
+    branches:
+      - openicons-full-public-20261122
+    paths:
+      - .github/workflows/openicons-full-windows.yml
+      - tools/openicons-full/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 65
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout isolated build sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            tools/openicons-full
+            .github/workflows/openicons-full-windows.yml
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up Node and npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Set up Go for Windows
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.2'
+      - name: Expand genuine Openicons source
+        run: |
+          tar -xzf tools/openicons-full/source.tar.gz -C tools/openicons-full
+          if (!(Test-Path tools/openicons-full/src/main.go)) { throw "Missing real Openicons source" }
+          python tools/openicons-full/prepare_full.py
+          Copy-Item tools/openicons-full/full_catalog_test.go tools/openicons-full/src/full_catalog_test.go
+      - name: Download official Iconify data at BUILD time
+        run: |
+          New-Item -ItemType Directory -Path tools/openicons-full/npm-cache -Force | Out-Null
+          '{"name":"openicons-full-build","version":"1.0.0","private":true}' | Set-Content -Path tools/openicons-full/npm-cache/package.json -Encoding utf8
+          Push-Location tools/openicons-full/npm-cache
+          try {
+            npm.cmd install --no-audit --no-fund --ignore-scripts --save-exact '@iconify/json@2.2.559'
+            if ($LASTEXITCODE -ne 0) { throw "Official Iconify npm download failed" }
+          } finally { Pop-Location }
+          $source = "tools/openicons-full/npm-cache/node_modules/@iconify/json/json"
+          if (!(Test-Path $source)) { throw "Official IconifyJSON files are missing" }
+          $n = @(Get-ChildItem $source -Filter '*.json').Count
+          Write-Host "Received $n collections from npm"
+          if ($n -lt 150) { throw "Downloaded insufficient collections" }
+      - name: Compress and validate every real offline collection
+        run: |
+          $src = "tools/openicons-full/src"
+          $json = "tools/openicons-full/npm-cache/node_modules/@iconify/json/json"
+          python "$src/tools/pack_iconify.py" --source "$json" --output "$src/data" --clean --min-icons 300000
+          if ($LASTEXITCODE -ne 0) { throw "FULL build rejected: insufficient real icon bodies" }
+          python tools/openicons-full/verify_full.py "$src/data" --min-icons 300000
+          if ($LASTEXITCODE -ne 0) { throw "FULL offline catalog verification failed" }
+      - name: ECC tests — real offline SVG, search and varied gallery
+        run: |
+          Push-Location tools/openicons-full/src
+          try {
+            go test -run '^TestFull' -count=1 -v ./...
+            if ($LASTEXITCODE -ne 0) { throw "Offline functional tests failed" }
+            go vet ./...
+            if ($LASTEXITCODE -ne 0) { throw "Static checks failed" }
+          } finally { Pop-Location }
+      - name: Compile branded Windows x64 EXE
+        run: |
+          Push-Location tools/openicons-full/src
+          try {
+            $env:GOOS='windows'
+            $env:GOARCH='amd64'
+            $env:CGO_ENABLED='0'
+            go build -trimpath -ldflags="-s -w -H=windowsgui" -o "$env:GITHUB_WORKSPACE/Openicons-by-Hashcod-FULL.exe" .
+            if ($LASTEXITCODE -ne 0) { throw "Windows x64 build failed" }
+          } finally { Pop-Location }
+          $exe="Openicons-by-Hashcod-FULL.exe"
+          if (!(Test-Path $exe)) { throw "Output EXE missing" }
+          $header=[System.IO.File]::ReadAllBytes((Resolve-Path $exe))
+          if ($header.Length -lt 30000000 -or $header[0] -ne 77 -or $header[1] -ne 90) {
+            throw "Invalid or unexpectedly tiny EXE; no artifact will be published"
+          }
+          Write-Host "REAL FULL Windows EXE: $($header.Length) bytes"
+      - name: Package credits, source and both download formats
+        run: |
+          $base="tools/openicons-full"
+          $data="$base/src/data"
+          $meta=Get-Content "$data/index.json" -Raw | ConvertFrom-Json
+          $counts=Get-Content "$data/verified-full.json" -Raw | ConvertFrom-Json
+          if ($counts.icons -lt 300000) { throw "Catalog count is below the minimum" }
+          $credits=@()
+          foreach ($prop in $meta.collections.PSObject.Properties) {
+            $lic=$prop.Value.license
+            $credits+= [PSCustomObject]@{
+              collection=$prop.Name
+              count=$prop.Value.total
+              license=$lic.spdx
+              license_name=$lic.title
+              license_url=$lic.url
+            }
+          }
+          $credits | ConvertTo-Json -Depth 8 | Set-Content "$base/ICON-LICENSES.json" -Encoding utf8
+          @"
+          Openicons by Hashcod — FULL OFFLINE Windows x64
+          ------------------------------------------------
+          Verifiably included: $($counts.icons) searchable icon IDs in $($counts.collections) collections.
+          OFFLINE: all bundles are inside Openicons-by-Hashcod-FULL.exe.
+          Copy/export SVG & PNG using the inspector. Browser app window uses the default Windows browser.
+          Original application copyright (c) 2026 Hashcod, MIT license.
+          Icon data: Iconify contributors, different licenses per collection (ICON-LICENSES.json).
+          Note: IDs can include aliases; IDs are not the same as unique drawings.
+          Source: tools/openicons-full/source.tar.gz and files in this isolated branch.
+          "@ | Set-Content "$base/README-FULL.txt" -Encoding utf8
+          $zip="Openicons-by-Hashcod-FULL.zip"
+          Compress-Archive -Path "Openicons-by-Hashcod-FULL.exe","$base/README-FULL.txt","$base/ICON-LICENSES.json","$data/verified-full.json","$base/source.tar.gz" -DestinationPath $zip -CompressionLevel Optimal -Force
+          Write-Host "Created EXE and complete source-and-license ZIP"
+      - name: Upload FULL EXE, ZIP and count proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: Openicons-by-Hashcod-FULL-Windows-300k-plus
+          path: |
+            Openicons-by-Hashcod-FULL.exe
+            Openicons-by-Hashcod-FULL.zip
+            tools/openicons-full/src/data/verified-full.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
