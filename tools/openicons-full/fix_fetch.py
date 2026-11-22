@@ -52,8 +52,9 @@ func TestFullCachedCollectionsHaveBoundedMemory(t *testing.T) {
  if e:=os.MkdirAll(a.folder("packs"),0700);e!=nil{t.Fatal(e)}
  for i:=0;i<9;i++{
   prefix:=fmt.Sprintf("testpack%d",i)
-  data:=fmt.Sprintf("{\\\\\\"prefix\\\\\\":%q,\\\\\\"width\\\\\\":24,\\\\\\"height\\\\\\":24,\\\\\\"icons\\\\\\":{\\\\\\"icon\\\\\\":{\\\\\\"body\\\\\\":\\\\\\"<circle/>\\\\\\"}}}",prefix)
-  if e:=os.WriteFile(filepath.Join(a.folder("packs"),prefix+".json"),[]byte(data),0600);e!=nil{t.Fatal(e)}
+  doc:=map[string]any{"prefix":prefix,"width":24,"height":24,"icons":map[string]any{"icon":map[string]string{"body":"<circle/>"}}}
+  data,_:=json.Marshal(doc)
+  if e:=os.WriteFile(filepath.Join(a.folder("packs"),prefix+".json"),data,0600);e!=nil{t.Fatal(e)}
   if _,e:=a.getPack(prefix);e!=nil{t.Fatal(e)}
   if len(a.packCache)>4{t.Fatal("unbounded cache")}
  }
