@@ -31,4 +31,17 @@ key="const amount=nice(stats.distinctIcons);"
 assert key in js
 js=js.replace(key,"if(stats.fullCatalogBundled){const panel=document.querySelector('.install-panel');if(panel)panel.classList.add('hidden');}\n   "+key)
 p.write_text(js,encoding="utf-8")
-print("Full catalog source and original UI prepared.")
+
+p=root/"clipboard_windows.go"
+win=p.read_text(encoding="utf-8")
+needle='copy(unsafe.Slice((*byte)(unsafe.Pointer(addr)), len(data)), data)'
+assert needle in win,"Expected original Win32 copy procedure"
+win=win.replace(needle, 'pRtlMoveMemory.Call(addr, uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)))\n\truntime.KeepAlive(data)')
+win=win.replace('"image/png"\n', '"image/png"\n\t"runtime"\n')
+win=win.replace('pGlobalUnlock            = kernel32.NewProc("GlobalUnlock")',
+                'pGlobalUnlock            = kernel32.NewProc("GlobalUnlock")\n\tpRtlMoveMemory           = kernel32.NewProc("RtlMoveMemory")')
+win=win.replace('func clipboardGlobal(data []byte) (uintptr, error) {\n',
+                'func clipboardGlobal(data []byte) (uintptr, error) {\n\tif len(data) == 0 {return 0, errors.New("no data to copy")}\n')
+p.write_text(win,encoding="utf-8")
+print("Windows clipboard native copy hardened; no unsafe uintptr-to-pointer conversion.")
+
