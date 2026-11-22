@@ -2,7 +2,7 @@ name: Build Openicons by Hashcod FULL offline Windows
 on:
   push:
     branches:
-      - openicons-full-public-20261122
+      - openicons-fix-fetch-20261122
     paths:
       - .github/workflows/openicons-full-windows.yml
       - tools/openicons-full/**
@@ -44,6 +44,8 @@ jobs:
           tar -xzf tools/openicons-full/source.tar.gz -C tools/openicons-full
           if (!(Test-Path tools/openicons-full/src/main.go)) { throw "Missing real Openicons source" }
           python tools/openicons-full/prepare_full.py
+          python tools/openicons-full/fix_fetch.py
+          if ($LASTEXITCODE -ne 0) { throw "Offline fetch reliability patch failed" }
           Copy-Item tools/openicons-full/full_catalog_test.go tools/openicons-full/src/full_catalog_test.go
       - name: Download official Iconify data at BUILD time
         run: |
