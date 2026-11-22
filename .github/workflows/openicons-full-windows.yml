@@ -1,8 +1,8 @@
-name: Build Openicons by Hashcod FULL transparent PNG Windows
+name: Build Openicons by Hashcod FULL original orientation Windows
 on:
   push:
     branches:
-      - openicons-transparent-png-20261122
+      - openicons-upright-20261122
     paths:
       - .github/workflows/openicons-full-windows.yml
       - tools/openicons-full/**
@@ -46,8 +46,10 @@ jobs:
           python tools/openicons-full/prepare_full.py
           python tools/openicons-full/keep_fixed_fetch.py
           python tools/openicons-full/fix_png_alpha.py
+          python tools/openicons-full/fix_orientation.py
           Copy-Item tools/openicons-full/full_catalog_test.go tools/openicons-full/src/full_catalog_test.go
           Copy-Item tools/openicons-full/clipboard_alpha_windows_test.go tools/openicons-full/src/clipboard_alpha_windows_test.go
+          Copy-Item tools/openicons-full/orientation_regression_test.go tools/openicons-full/src/orientation_regression_test.go
           node --check tools/openicons-full/src/web/app.js
           if ($LASTEXITCODE -ne 0) { throw "PNG UI JavaScript syntax invalid" }
       - name: Download official Iconify data at BUILD time
@@ -76,7 +78,7 @@ jobs:
         run: |
           Push-Location tools/openicons-full/src
           try {
-            go test -run '^(TestFull|TestClipboard)' -count=1 -v ./...
+            go test -run '^(TestFull|TestClipboard|TestOrientation)' -count=1 -v ./...
             if ($LASTEXITCODE -ne 0) { throw "Offline functional tests failed" }
             go vet ./...
             if ($LASTEXITCODE -ne 0) { throw "Static checks failed" }
@@ -88,10 +90,10 @@ jobs:
             $env:GOOS='windows'
             $env:GOARCH='amd64'
             $env:CGO_ENABLED='0'
-            go build -trimpath -ldflags="-s -w -H=windowsgui" -o "$env:GITHUB_WORKSPACE/Openicons-by-Hashcod-FULL-TransparentPNG.exe" .
+            go build -trimpath -ldflags="-s -w -H=windowsgui" -o "$env:GITHUB_WORKSPACE/Openicons-by-Hashcod-FULL-Upright.exe" .
             if ($LASTEXITCODE -ne 0) { throw "Windows x64 build failed" }
           } finally { Pop-Location }
-          $exe="Openicons-by-Hashcod-FULL-TransparentPNG.exe"
+          $exe="Openicons-by-Hashcod-FULL-Upright.exe"
           if (!(Test-Path $exe)) { throw "Output EXE missing" }
           $header=[System.IO.File]::ReadAllBytes((Resolve-Path $exe))
           if ($header.Length -lt 30000000 -or $header[0] -ne 77 -or $header[1] -ne 90) {
@@ -121,8 +123,9 @@ jobs:
           Openicons by Hashcod — FULL OFFLINE Windows x64
           ------------------------------------------------
           Verifiably included: $($counts.icons) searchable icon IDs in $($counts.collections) collections.
-          OFFLINE: all bundles are inside Openicons-by-Hashcod-FULL-TransparentPNG.exe.
+          OFFLINE: all bundles are inside Openicons-by-Hashcod-FULL-Upright.exe.
           PNG copy/download keeps transparent alpha irrespective of preview background.
+          Icons render in the source orientation. Variant styles are color, scale and background only.
           Win32 clipboard supports registered PNG and alpha-aware CF_DIBV5.
           Browser app window uses the default Windows browser.
           Original application copyright (c) 2026 Hashcod, MIT license.
@@ -130,16 +133,16 @@ jobs:
           Note: IDs can include aliases; IDs are not the same as unique drawings.
           Source: tools/openicons-full/source.tar.gz and files in this isolated branch.
           "@ | Set-Content "$base/README-FULL.txt" -Encoding utf8
-          $zip="Openicons-by-Hashcod-FULL-TransparentPNG.zip"
-          Compress-Archive -Path "Openicons-by-Hashcod-FULL-TransparentPNG.exe","$base/README-FULL.txt","$base/ICON-LICENSES.json","$data/verified-full.json","$base/source.tar.gz","$base/fix_png_alpha.py","$base/keep_fixed_fetch.py" -DestinationPath $zip -CompressionLevel Optimal -Force
+          $zip="Openicons-by-Hashcod-FULL-Upright.zip"
+          Compress-Archive -Path "Openicons-by-Hashcod-FULL-Upright.exe","$base/README-FULL.txt","$base/ICON-LICENSES.json","$data/verified-full.json","$base/source.tar.gz","$base/fix_png_alpha.py","$base/keep_fixed_fetch.py","$base/fix_orientation.py","$base/orientation_regression_test.go" -DestinationPath $zip -CompressionLevel Optimal -Force
           Write-Host "Created EXE and complete source-and-license ZIP"
       - name: Upload FULL EXE, ZIP and count proof
         uses: actions/upload-artifact@v4
         with:
-          name: Openicons-by-Hashcod-FULL-TransparentPNG-Windows-300k-plus
+          name: Openicons-by-Hashcod-FULL-Upright-Windows-300k-plus
           path: |
-            Openicons-by-Hashcod-FULL-TransparentPNG.exe
-            Openicons-by-Hashcod-FULL-TransparentPNG.zip
+            Openicons-by-Hashcod-FULL-Upright.exe
+            Openicons-by-Hashcod-FULL-Upright.zip
             tools/openicons-full/src/data/verified-full.json
           if-no-files-found: error
           retention-days: 14
